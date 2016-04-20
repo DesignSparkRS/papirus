@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+
+import paho.mqtt.client as mqtt
+import os
+import sys
+from papirus import Papirus
+from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
+import argparse
+
+WHITE = 1
+BLACK = 0
+
+# Set the font size for the display
+
+textSize = 50
+
+papirus = Papirus()
+
+def write_text(papirus, text, size):
+
+	# initially set all white background
+	image = Image.new('1', papirus.size, WHITE)
+
+	# prepare for drawing
+	draw = ImageDraw.Draw(image)
+
+	font = ImageFont.truetype('/usr/share/fonts/truetype/freefont/FreeMono.ttf', size)
+
+	# Calculate the max number of char to fit on line
+	line_size = (papirus.width / (size*0.65))
+
+	current_line = 0
+	text_lines = [""]
+
+	# Compute each line
+	for word in text.split():
+	        # If there is space on line add the word to it
+		if (len(text_lines[current_line]) + len(word)) < line_size:
+			text_lines[current_line] += " " + word
+	 	else:
+		# No space left on line so move to next one
+			text_lines.append("")
+			current_line += 1
+			text_lines[current_line] += " " + word
+
+	current_line = 0
+	for l in text_lines:
+		current_line += 1
+		draw.text( (0, ((size*current_line)-size)) , l, font=font, fill=BLACK)
+
+	papirus.display(image)
+	papirus.update()
+
+# Callback from when client receives a CONNACK response from the server
+
+def on_connect(client, userdata, flags, rc):
+	print("Connected with result code "+str(rc))
+
+# Subscribing in on_connect means that if we lose connection 
+# and reconnect then subscriptions will be renewed
+
+	client.subscribe("officeTemp")
+
+# Callback for when a PUBLISH message is received from the server
+
+def on_message(client, userdata, msg):
+	print("got message on topic %s: %s" % (msg.topic, msg.payload))
+	displayTemp = round(float(msg.payload), 1)
+	write_text(papirus, "%s C" % (displayTemp), textSize)
+
+# Set up the connection to the MQTT broker
+
+client = mqtt.Client()
+client.username_pw_set(username="pi", password="bilberry")
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect("10.0.10.21", 1883, 60)
+
+# Blocking call that processes network traffic, dispatches callbacks
+# and handles reconnecting
+# Other loop*() fucntions are available that give a threaded interface
+# and a manual interface
+
+try:
+	client.loop_forever()
+
+# deal with ^C
+
+except KeyboardInterrupt:
+	print("interrupted!")
+
